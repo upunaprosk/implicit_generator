@@ -213,12 +213,15 @@ def generate_imp_hs(prompt,
         # Generate full_names and scores lists
         full_names = []
         scores = []
-        for logprob in logprobs:
-            keys = list(logprob[0].keys())
-            values = list(logprob[0].values())
-            filtered_scores = [omit_unwanted_token(keys[j], values[j], stops, prompt) for j in range(len(values))]
-            full_names.extend(keys)
-            scores.append(filtered_scores)
+        try:
+            for logprob in logprobs:
+                keys = list(logprob[0].keys())
+                values = list(logprob[0].values())
+                filtered_scores = [omit_unwanted_token(keys[j], values[j], stops, prompt) for j in range(len(values))]
+                full_names.extend(keys)
+                scores.append(filtered_scores)
+        except:
+            continue # continue with generation if model outputs end of the text token only
 
         # Convert the scores list to a PyTorch tensor and reshape it appropriately.
         scores_tensor = torch.tensor(scores).view(num_beams, -1)

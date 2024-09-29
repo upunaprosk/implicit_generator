@@ -41,78 +41,80 @@ def run_experiment(cfg: DictConfig, run: mlflow.ActiveRun):
     """
 
     # Create a temporary directory to save output files
-    with TemporaryDirectory() as tmpfile:
-        output_dir = Path(tmpfile)
+    output_dir_path = cfg.input.output_dir
+    output_dir = Path(output_dir_path)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Initialize the classifier pipeline with the specified model
-        classifier = pipeline("text-classification",
-                              model=cfg.input.pretrained_path_or_model)
+    # Initialize the classifier pipeline with the specified model
+    classifier = pipeline("text-classification",
+                          model=cfg.input.pretrained_path_or_model)
 
-        lexicon = pd.read_csv(cfg.input.lexicon_file)
+    lexicon = pd.read_csv(cfg.input.lexicon_file)
 
-        sentence_sim = SentenceTransformer(cfg.input.sentence_sim)
+    sentence_sim = SentenceTransformer(cfg.input.sentence_sim)
 
-        model_endpoint = f"https://api.openai.com/v1/engines/{cfg.input.engine}/completions"
+    model_endpoint = f"https://api.openai.com/v1/engines/{cfg.input.engine}/completions"
 
-        # Load and preprocess the training data
-        data = pd.read_csv(cfg.input.train_file)
-        data = data[data["implicit_layer"] == "Implicit HS"]
+    # Load and preprocess the training data
+    data = pd.read_csv(cfg.input.train_file)
+    data = data[data["implicit_layer"] == "Implicit HS"]
 
-        nof_gens = 0
-        adv_gens = []
-        targets = []
-        prompts = []
+    nof_gens = 0
+    adv_gens = []
+    targets = []
+    prompts = []
 
-        # Cycle through the protected groups and generate hate speech examples
-        for group in cycle(cfg.input.protected_groups):
-            if nof_gens >= cfg.input.nof_gens:
-                break
+    # Cycle through the protected groups and generate hate speech examples
+    for group in cycle(cfg.input.protected_groups):
+        if nof_gens >= cfg.input.nof_gens:
+            break
 
-            data_with_target = data[data["sanitized_target"] == group]
-            data_shots = data_with_target["text"].sample(cfg.input.nof_shots)
+        data_with_target = data[data["sanitized_target"] == group]
+        data_shots = data_with_target["text"].sample(cfg.input.nof_shots)
 
-            examples = "\\n- ".join(data_shots)
+        examples = "\\n- ".join(data_shots)
 
-            # Use the prompt template from the config, replacing placeholders with actual values
-            # The last "-" is now part of the prompt template in the configuration file
-            prompt = cfg.input.prompt_template.format(group=group.lower(), examples=examples)
+        # Use the prompt template from the config, replacing placeholders with actual values
+        # The last "-" is now part of the prompt template in the configuration file
+        prompt = cfg.input.prompt_template.format(group=group.lower(), examples=examples)
 
-            response = generate_imp_hs(prompt=prompt,
-                                       shots=data_shots,
-                                       secret_key=cfg.input.secret_key,
-                                       model_endpoint=model_endpoint,
-                                       classifier=classifier,
-                                       sentence_sim=sentence_sim,
-                                       lexicon=lexicon,
-                                       end_token=cfg.input.end_token,
-                                       weights=cfg.input.weights,
-                                       num_beams=cfg.input.num_beams,
-                                       max_length=cfg.input.max_length,
-                                       length_penalty=cfg.input.length_penalty)
+        response = generate_imp_hs(prompt=prompt,
+                                   shots=data_shots,
+                                   secret_key=cfg.input.secret_key,
+                                   model_endpoint=model_endpoint,
+                                   classifier=classifier,
+                                   sentence_sim=sentence_sim,
+                                   lexicon=lexicon,
+                                   end_token=cfg.input.end_token,
+                                   weights=cfg.input.weights,
+                                   num_beams=cfg.input.num_beams,
+                                   max_length=cfg.input.max_length,
+                                   length_penalty=cfg.input.length_penalty)
 
-            for res in response:
-                r = res[(len(prompt) + 1):].strip().replace("\\n", "")
-                print(f"response: {r}\n")
-                print(f"gen_id: {nof_gens}\n")
-                adv_gens.append(r)
-                targets.append(group)
-                prompts.append(prompt)
+        for res in response:
+            r = res[(len(prompt) + 1):].strip().replace("\\n", "")
+            print(f"response: {r}\n")
+            print(f"gen_id: {nof_gens}\n")
+            adv_gens.append(r)
+            targets.append(group)
+            prompts.append(prompt)
 
-                if len(r.split()) >= cfg.input.min_length_sent:
-                    nof_gens += 1
+            if len(r.split()) >= cfg.input.min_length_sent:
+                nof_gens += 1
 
 
-        # Save generated data to a CSV file
-        df_gens = pd.DataFrame({
-            "prompt": prompts,
-            "text": adv_gens,
-            "target": targets,
-        })
-        output_csv_path = output_dir / f"gpt3-{cfg.input.engine}__shots={cfg.input.nof_shots}.csv"
-        df_gens.to_csv(output_csv_path, index=False)
+    # Save generated data to a CSV file
+    df_gens = pd.DataFrame({
+        "prompt": prompts,
+        "text": adv_gens,
+        "target": targets,
+    })
+    output_csv_path = output_dir / f"gpt3-{cfg.input.engine}__shots={cfg.input.nof_shots}.csv"
+    df_gens.to_csv(output_csv_path, index=False)
+    logger.info(f"Generations saved to: {cfg.input.output_dir}")
 
-        # Log the output directory as an artifact
-        mlflow.log_artifacts(str(output_dir), artifact_path="generated_data")
+    # Log the output directory as an artifact
+    mlflow.log_artifacts(str(output_dir), artifact_path="generated_data")
 
 
 @hydra.main(config_path='conf', config_name='config', version_base=None)

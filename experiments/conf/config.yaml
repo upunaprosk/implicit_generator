@@ -21,3 +21,4 @@ input:
   experiment_name: "HateSpeechGenerationExperiment"  # Name of the MLflow experiment
   run_name: "Run-001"  # Name of the MLflow run
   experiment_description: "Generation of hate speech examples for analysis and study"  # Description for the MLflow experiment
+  output_dir: "./results/"
